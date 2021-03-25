@@ -14,6 +14,7 @@ namespace webScrabber
             .Build();
         static void Main(string[] args)
         {
+            driver.Manage().Window.Maximize();
             driver.Navigate().GoToUrl(config["scrapper:kufar:baselink"]);
             loginToKufarWebSite();
             driver.Navigate().GoToUrl(config["scrapper:kufar:secondaryLink"]);
