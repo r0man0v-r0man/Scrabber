@@ -1,8 +1,11 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +17,12 @@ namespace Scrabber
         public static IConfiguration config = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", true, true)
             .Build();
+        private readonly IDbContextFactory<ScrabberContext> _contextFactory;
+
+        public Worker(IDbContextFactory<ScrabberContext> contextFactory)
+        {
+            _contextFactory = contextFactory;
+        }
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -29,20 +38,54 @@ namespace Scrabber
 
                     var links = _browser
                         .FindElements(By.XPath("/html/body/div[1]/div/div[1]/main/div/div/div[3]/div[1]/article/div/div/a[*]"));
+                    var listAdverts = new List<Advert>();
                     foreach (var link in links)
                     {
+                        var advert = new Advert();
                         Thread.Sleep(2 * 1000);
                         link.Click();
                         Thread.Sleep(2 * 1000);
                         _browser.SwitchTo().Window(_browser.WindowHandles.Last());
                         Thread.Sleep(2 * 1000);
+                        advert.Address = _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[3]/span")).Text;
+                        advert.Price = Convert.ToInt32((_browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[4]/div/span[1]")).Text).Replace("р.", "").Replace(" ", ""));
+
+                        _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/button[1]")).Click(); //телефона может не быть, сделать проверку
+                        Thread.Sleep(2 * 1000);
+
+                       advert.Phone = _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/div[2]/div/div/a[1]")).Text.Replace(" ", "").Replace("(", "").Replace(")", "");
+                        _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/div[2]/span")).Click();
+                        Thread.Sleep(2 * 1000);
+
+                        advert.Area = (int)Math.Round(Convert.ToDecimal(_browser.FindElement(By.XPath("//div[@data-name='size']/following::div")).Text.Replace("м²", "").Replace(" ", ""))); //сделать проверку
+                        advert.Description = _browser.FindElement(By.XPath("//div[@id='description']/*[2]")).Text;
+
+                        var imgsLinksCollection = _browser
+                            .ExecuteScript("return Array.prototype.slice.call(document.querySelector('#photo').querySelectorAll('img[src*=\"images\"]')).map(function (item){return item.getAttribute('src')})");
+                        var listOfLinks = new List<Image>();
+                        foreach (var item in (ReadOnlyCollection<Object>)imgsLinksCollection)
+                        {
+                            listOfLinks.Add(new Image
+                            {
+                                Link = item as string
+                            });
+                        }
+
+                        var imgsSrcList = listOfLinks.Distinct();
+                        advert.Images.AddRange(imgsSrcList);
+                        listAdverts.Add(advert);
                         _browser.Close();
                         _browser.SwitchTo().Window(_browser.WindowHandles.First());
                     }
+
+                    using var context = _contextFactory.CreateDbContext();
+                    await context.Adverts.AddRangeAsync(listAdverts);
+                    await context.SaveChangesAsync();
+
                 }
-                catch (WebDriverException)
+                catch (Exception ex)
                 {
-                    throw;
+                   Console.WriteLine(ex.Message);
                 }
                 finally
                 {
@@ -50,7 +93,7 @@ namespace Scrabber
                     _browser.Dispose();
                 }
 
-                await Task.Delay(10 * 1000, stoppingToken);
+                await Task.Delay(100 * 1000, stoppingToken);
             }
         }
         private void SignInToKufar(IWebDriver driver)

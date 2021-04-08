@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
 using Scrabber;
 
 namespace webScrabber
@@ -18,6 +18,13 @@ namespace webScrabber
                 .ConfigureServices((hostContext, services) =>
                 {
                     services.AddHostedService<Worker>();
-                });
+                    services.AddDbContextFactory<ScrabberContext>(options =>
+                    {
+                        var connection = new SqliteConnection("DataSource=D:\\halupa\\scrabber_db.db");
+                        options.UseSqlite(connection);
+                    });
+                    services.AddTransient(o => o.GetRequiredService<IDbContextFactory<ScrabberContext>>().CreateDbContext());
+                })
+            ;
     }
 }
