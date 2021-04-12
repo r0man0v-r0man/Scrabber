@@ -27,7 +27,11 @@ namespace Scrabber
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var _browser = new ChromeDriver();
+                var options = new ChromeOptions();
+                options.AddArgument("window-size=1366x768");
+                options.AddArgument("--headless");
+                options.AddArgument("log-level=3");
+                var _browser = new ChromeDriver(options);
                 try
                 {
                     _browser.Manage().Window.Maximize();
@@ -38,7 +42,6 @@ namespace Scrabber
 
                     var links = _browser
                         .FindElements(By.XPath("/html/body/div[1]/div/div[1]/main/div/div/div[3]/div[1]/article/div/div/a[*]"));
-                    var listAdverts = new List<Advert>();
                     foreach (var link in links)
                     {
                         var advert = new Advert();
@@ -48,16 +51,43 @@ namespace Scrabber
                         _browser.SwitchTo().Window(_browser.WindowHandles.Last());
                         Thread.Sleep(2 * 1000);
                         advert.Address = _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[3]/span")).Text;
-                        advert.Price = Convert.ToInt32((_browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[4]/div/span[1]")).Text).Replace("р.", "").Replace(" ", ""));
+                        int price;
+                        if (Int32.TryParse(
+                            _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[4]/div/span[1]")).Text.Replace("р.", "").Replace(" ", "").Replace(".", ""),
+                            out price))
+                        {
+                            advert.Price = price;
+                        }
+                        else
+                        {
+                            _browser.Close();
+                            _browser.SwitchTo().Window(_browser.WindowHandles.First());
+                            continue;
+                        }
 
                         _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/button[1]")).Click(); //телефона может не быть, сделать проверку
                         Thread.Sleep(2 * 1000);
 
-                       advert.Phone = _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/div[2]/div/div/a[1]")).Text.Replace(" ", "").Replace("(", "").Replace(")", "");
+                        advert.Phone = _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/div[2]/div/div/a[1]"))
+                            .Text.Replace(" ", "").Replace("(", "").Replace(")", "").Replace("-", "").Replace("+375", "80");
                         _browser.FindElement(By.XPath("/html/body/div[1]/div/div[1]/main/div/div[3]/div[2]/div[2]/div[5]/div[2]/span")).Click();
                         Thread.Sleep(2 * 1000);
 
-                        advert.Area = (int)Math.Round(Convert.ToDecimal(_browser.FindElement(By.XPath("//div[@data-name='size']/following::div")).Text.Replace("м²", "").Replace(" ", ""))); //сделать проверку
+
+                        var words = _browser.FindElement(By.XPath("//div[@data-name='size']/following::div"))
+                            ?.Text.Replace("м²", "").Replace(" ", "").Split(new char[] { '.' });
+                        int area;
+                        if (Int32.TryParse(words[0], out area))
+                        {
+                            advert.Area = area;
+                        }
+                        else
+                        {
+                            _browser.Close();
+                            _browser.SwitchTo().Window(_browser.WindowHandles.First());
+                            continue;
+                        }
+
                         advert.Description = _browser.FindElement(By.XPath("//div[@id='description']/*[2]")).Text;
 
                         var imgsLinksCollection = _browser
@@ -73,19 +103,21 @@ namespace Scrabber
 
                         var imgsSrcList = listOfLinks.Distinct();
                         advert.Images.AddRange(imgsSrcList);
-                        listAdverts.Add(advert);
+                        using var context = _contextFactory.CreateDbContext();
+                        await context.Adverts.AddAsync(advert);
+                        await context.SaveChangesAsync();
                         _browser.Close();
                         _browser.SwitchTo().Window(_browser.WindowHandles.First());
                     }
-
-                    using var context = _contextFactory.CreateDbContext();
-                    await context.Adverts.AddRangeAsync(listAdverts);
-                    await context.SaveChangesAsync();
-
+                }
+                catch (NoSuchElementException )
+                {
+                    _browser.Close();
+                    _browser.SwitchTo().Window(_browser.WindowHandles.First());
                 }
                 catch (Exception ex)
                 {
-                   Console.WriteLine(ex.Message);
+                   Console.WriteLine(ex.Message, ex.StackTrace);
                 }
                 finally
                 {
@@ -93,7 +125,7 @@ namespace Scrabber
                     _browser.Dispose();
                 }
 
-                await Task.Delay(100 * 1000, stoppingToken);
+                await Task.Delay(10 * 10000, stoppingToken);
             }
         }
         private void SignInToKufar(IWebDriver driver)
