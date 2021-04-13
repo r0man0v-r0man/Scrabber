@@ -41,6 +41,14 @@ namespace Scrabber
             browser.Close();
             browser.SwitchTo().Window(browser.WindowHandles.First());
         }
+        private string GetAddress(ChromeDriver browser)
+        {
+            return browser.FindElement(By.XPath(config["scrapper:kufar:elements:address"]))?.Text;
+        }
+        private string GetPrice(ChromeDriver browser)
+        {
+            return browser.FindElement(By.XPath(config["scrapper:kufar:elements:price"])).Text.Replace("р.", "").Replace(" ", "").Replace(".", "");
+        }
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -54,8 +62,8 @@ namespace Scrabber
                     _browser.Navigate().GoToUrl(config["scrapper:kufar:secondaryLink"]);
                     Thread.Sleep(3 * 1000);
 
-                    var links = _browser
-                        .FindElements(By.XPath(config["scrapper:kufar:elements:links"]));
+                    var links = GetLinks(_browser);
+
                     foreach (var link in links)
                     {
                         var advert = new Advert();
@@ -64,9 +72,9 @@ namespace Scrabber
                         Thread.Sleep(2 * 1000);
                         _browser.SwitchTo().Window(_browser.WindowHandles.Last());
                         Thread.Sleep(2 * 1000);
-                        advert.Address = _browser.FindElement(By.XPath(config["scrapper:kufar:elements:address"])).Text;
+                        advert.Address = GetAddress(_browser);
                         int price;
-                        if (Int32.TryParse(_browser.FindElement(By.XPath(config["scrapper:kufar:elements:price"])).Text.Replace("р.", "").Replace(" ", "").Replace(".", ""), out price))
+                        if (Int32.TryParse(, out price))
                         {
                             advert.Price = price;
                         }
@@ -135,12 +143,18 @@ namespace Scrabber
                 await Task.Delay(10 * 10000, stoppingToken);
             }
         }
+
+        private ReadOnlyCollection<IWebElement> GetLinks(ChromeDriver _browser)
+        {
+            return _browser.FindElements(By.XPath(config["scrapper:kufar:elements:links"]));
+        }
+
         private void SignInToKufar(IWebDriver driver)
         {
-            var popupCloseBtn = driver.FindElement(By.XPath("/html/body/div[2]/div/div[2]/div[1]/div/img"));
+            var popupCloseBtn = driver.FindElement(By.XPath(config["scrapper:kufar:elements:popupCloseBtn"]));
             popupCloseBtn.Click();
             Thread.Sleep(3 * 1000);
-            var enterBtn = driver.FindElement(By.XPath("/html/body/div[1]/div[1]/div[1]/div[1]/div/div/div[2]/div[3]/div/div/button"));
+            var enterBtn = driver.FindElement(By.XPath(config["scrapper:kufar:elements:enterBtn"]));
             enterBtn.Click();
             Thread.Sleep(2 * 1000);
             var emailInput = driver.FindElement(By.Id("email"));
@@ -149,7 +163,7 @@ namespace Scrabber
             var passwordInput = driver.FindElement(By.Id("password"));
             passwordInput.SendKeys(config["scrapper:kufar:password"]);
             Thread.Sleep(1 * 1000);
-            var submitEnterCredentialsBtn = driver.FindElement(By.XPath("/html/body/div[1]/div[3]/div/div/div/form/div[4]/button"));
+            var submitEnterCredentialsBtn = driver.FindElement(By.XPath(config["scrapper:kufar:elements:submitEnterCredentialsBtn"]));
             submitEnterCredentialsBtn.Click();
         }
     }
